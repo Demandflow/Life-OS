@@ -20,14 +20,19 @@ class ClickUpClient:
             'Authorization': self.api_key,
             'Content-Type': 'application/json'
         }
+        logger.info(f"Headers configured with API key: {self.api_key[:10]}...")
         
     def get_workspaces(self):
         """Get all workspaces"""
         try:
+            logger.info(f"Making request to {self.base_url}/team")
+            logger.info(f"Using headers: {self.headers}")
             response = requests.get(
                 f"{self.base_url}/team",
                 headers=self.headers
             )
+            logger.info(f"Response status code: {response.status_code}")
+            logger.info(f"Response content: {response.text}")
             response.raise_for_status()
             return response.json().get('teams', [])
         except Exception as e:
@@ -90,12 +95,14 @@ clickup = ClickUpClient()
 
 @clickup_bp.route('/api/clickup/tasks/recent', methods=['GET'])
 def get_recent_tasks():
-    """Get tasks from the past day and upcoming day"""
+    """Get tasks from the past week and upcoming month"""
     try:
         # Get date range
         today = datetime.now()
-        yesterday = today - timedelta(days=1)
-        tomorrow = today + timedelta(days=1)
+        start_date = today - timedelta(days=7)  # Past week
+        end_date = today + timedelta(days=30)   # Next month
+        
+        logger.info(f"Fetching tasks between {start_date} and {end_date}")
         
         # Get all workspaces
         workspaces = clickup.get_workspaces()
@@ -129,7 +136,7 @@ def get_recent_tasks():
                     list_name = list_item['name']
                     
                     # Get tasks in list
-                    tasks = clickup.get_tasks(list_id, yesterday, tomorrow)
+                    tasks = clickup.get_tasks(list_id, start_date, end_date)
                     if not tasks:
                         continue
                         

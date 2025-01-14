@@ -7,5 +7,5 @@ logger = logging.getLogger(__name__)
 app = create_app()
 
 if __name__ == '__main__':
-    logger.info("Starting server on http://localhost:5003")
-    app.run(host='127.0.0.1', port=5003, debug=True)
+    logger.info("Starting server on http://localhost:5004")
+    app.run(host='127.0.0.1', port=5004, debug=True)

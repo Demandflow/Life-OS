@@ -128,12 +128,7 @@ class GoogleCalendar:
             logger.info(f"Fetching events from {start} to {end}")
             
             try:
-                # First, test the API with a simple call
-                logger.info("Testing API access with primary calendar")
-                primary = self.service.calendars().get(calendarId='primary').execute()
-                logger.info(f"Successfully accessed primary calendar: {primary.get('summary')}")
-                
-                # Now get list of all calendars
+                # Get list of all calendars
                 logger.info("Fetching calendar list")
                 calendar_list = self.service.calendarList().list().execute()
                 calendars = calendar_list.get('items', [])
@@ -141,7 +136,8 @@ class GoogleCalendar:
                 for cal in calendars:
                     logger.info(f"Calendar: {cal.get('summary')} ({cal.get('id')})")
                     logger.info(f"Access Role: {cal.get('accessRole')}")
-                    logger.info(f"Primary: {cal.get('primary', False)}")
+                    logger.info(f"Selected: {cal.get('selected', False)}")
+                    logger.info(f"Hidden: {cal.get('hidden', False)}")
                     logger.info("---")
                 
             except Exception as e:
@@ -155,72 +151,65 @@ class GoogleCalendar:
             for calendar in calendars:
                 calendar_id = calendar.get('id')
                 calendar_name = calendar.get('summary', 'Unknown Calendar')
-                access_role = calendar.get('accessRole', 'unknown')
+                
+                # Skip if calendar is hidden
+                if calendar.get('hidden', False):
+                    logger.info(f"Skipping hidden calendar {calendar_name}")
+                    continue
                 
                 logger.info(f"\nProcessing calendar: {calendar_name}")
-                logger.info(f"Access Role: {access_role}")
                 logger.info(f"Calendar ID: {calendar_id}")
                 
-                # Skip if calendar is deleted or hidden
-                if calendar.get('deleted', False) or calendar.get('hidden', False):
-                    logger.info(f"Skipping calendar {calendar_name} - deleted or hidden")
-                    continue
-                
-                # Skip the Tasks calendar
-                if calendar_name == 'Tasks':
-                    logger.info(f"Skipping Tasks calendar")
-                    continue
-                
-                # Skip calendars we can't read
-                if access_role not in ['owner', 'writer', 'reader']:
-                    logger.info(f"Skipping calendar {calendar_name} due to insufficient access rights: {access_role}")
-                    continue
-                    
-                logger.info(f"Fetching events from calendar: {calendar_name}")
-                
                 try:
-                    # Get events with timeout
+                    # Get events with detailed logging
+                    logger.info(f"Requesting events for {calendar_name} between {start} and {end}")
                     events_result = self.service.events().list(
                         calendarId=calendar_id,
                         timeMin=start,
                         timeMax=end,
                         singleEvents=True,
-                        orderBy='startTime'
+                        orderBy='startTime',
+                        maxResults=2500  # Increased from default
                     ).execute()
                     
                     events = events_result.get('items', [])
                     logger.info(f"Found {len(events)} events in {calendar_name}")
                     
                     if not events:
-                        logger.info(f"No events found in calendar {calendar_name} for the specified time period")
+                        logger.info(f"No events found in calendar {calendar_name}")
                         continue
                     
                     # Process events into a more usable format
                     for event in events:
                         try:
-                            start = event['start'].get('dateTime', event['start'].get('date'))
-                            end = event['end'].get('dateTime', event['end'].get('date'))
+                            start_time = event['start'].get('dateTime', event['start'].get('date'))
+                            end_time = event['end'].get('dateTime', event['end'].get('date'))
+                            title = event.get('summary', 'No Title')
+                            
+                            logger.info(f"Processing event: {title} at {start_time}")
                             
                             processed_event = {
-                                'title': event.get('summary', 'No Title'),
-                                'start_time': start,
-                                'end_time': end,
+                                'title': title,
+                                'start_time': start_time,
+                                'end_time': end_time,
                                 'description': event.get('description', ''),
                                 'location': event.get('location', ''),
                                 'attendees': [
                                     attendee['email'] 
                                     for attendee in event.get('attendees', [])
-                                    if not attendee.get('self', False)  # Exclude self
+                                    if not attendee.get('self', False)
                                 ],
                                 'calendar_id': calendar_id,
                                 'calendar_name': calendar_name,
                                 'event_id': event.get('id', ''),
-                                'html_link': event.get('htmlLink', '')
+                                'html_link': event.get('htmlLink', ''),
+                                'status': event.get('status', '')
                             }
                             all_events.append(processed_event)
-                            logger.info(f"Added event: {processed_event['title']} from {calendar_name}")
+                            logger.info(f"Added event: {title} from {calendar_name}")
                         except Exception as e:
                             logger.error(f"Error processing event in {calendar_name}: {str(e)}")
+                            logger.error(f"Event data: {event}")
                             continue
                             
                 except Exception as e:
