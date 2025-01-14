@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 *.so
 .Python
+env/
 build/
 develop-eggs/
 dist/
@@ -23,8 +24,6 @@ wheels/
 # Virtual Environment
 venv/
 ENV/
-env/
-.env
 
 # IDE
 .idea/
@@ -32,11 +31,13 @@ env/
 *.swp
 *.swo
 
-# Project specific
-today_tasks_snapshot.json
+# Credentials and tokens
+credentials.json
+token.pickle
+
+# Logs
 *.log
 
-# macOS
+# OS
 .DS_Store
-.AppleDouble
-.LSOverride 
+.env 

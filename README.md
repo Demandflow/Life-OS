@@ -1,35 +1,43 @@
 # Life OS
 
-A personal productivity system that integrates with Things 3 to manage tasks and track progress.
+A personal productivity system that integrates with various tools and services.
 
-## Features
+## Current Integrations
 
-- Get tasks from Things 3 Today view
-- Track completed tasks from yesterday and today
-- Group tasks by areas and projects
-- Maintain task order from Things 3
+- Things 3 (Tasks)
+- Google Calendar (Events)
 
 ## Setup
 
 1. Install dependencies:
 ```bash
-pip3 install flask things
+pip3 install -r requirements.txt
 ```
 
-2. Start the server:
+2. Set up Google Calendar integration:
+   - Go to [Google Cloud Console](https://console.cloud.google.com)
+   - Create a new project
+   - Enable the Google Calendar API
+   - Create OAuth 2.0 credentials (Desktop app)
+   - Download the credentials and save as `credentials.json` in the project root
+
+3. Start the server:
 ```bash
 python3 -m flask --app backend/app/__init__.py run --port 5004
 ```
 
 ## API Endpoints
 
-- `/api/tasks/today` - Get current tasks in Today view
-- `/api/tasks/yesterday/completed` - Get tasks completed yesterday
-- `/api/tasks/completed/recent` - Get tasks completed since yesterday (including today)
-- `/api/tasks/today/save_snapshot` - Save current Today view state
+### Tasks (Things 3)
 
-## Requirements
+- `GET /api/tasks/today`: Get all tasks in Today view
 
-- Python 3.x
-- Things 3 app
-- macOS (required for Things 3) 
+### Calendar (Google Calendar)
+
+- `GET /api/calendar/events/recent`: Get events from yesterday and today
+
+## Development
+
+- The server runs in debug mode by default
+- First request to calendar endpoints will trigger Google OAuth flow
+- Credentials are cached in `token.pickle` 
