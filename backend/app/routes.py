@@ -207,14 +207,14 @@ def get_ceo_overview():
                 from .calendar_integration import get_calendar_client
                 calendar = get_calendar_client()
                 calendar_events = calendar.get_events(
-                    start_time=(today - timedelta(days=1)).isoformat(),
-                    end_time=(today + timedelta(days=7)).isoformat()
+                    start_date=today - timedelta(days=1),
+                    end_date=today + timedelta(days=7)
                 )
 
                 upcoming_meetings = []
                 for event in calendar_events:
                     upcoming_meetings.append({
-                        'title': event['summary'],
+                        'title': event['title'],
                         'start_time': event['start_time'],
                         'end_time': event['end_time'],
                         'attendees': event.get('attendees', [])
