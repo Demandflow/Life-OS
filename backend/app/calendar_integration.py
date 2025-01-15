@@ -269,6 +269,17 @@ class GoogleCalendar:
                 'message': f'Error getting recent events: {str(e)}'
             }
 
+def get_calendar_client():
+    """Get an instance of the GoogleCalendar client"""
+    try:
+        client = GoogleCalendar()
+        if client.authenticate():
+            return client
+        return None
+    except Exception as e:
+        logger.error(f"Error creating calendar client: {str(e)}")
+        return None
+
 @calendar_bp.route('/api/calendar/events/recent', methods=['GET'])
 def get_recent_events():
     """Get events from yesterday and today"""
