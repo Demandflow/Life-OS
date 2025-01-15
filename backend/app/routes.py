@@ -1,17 +1,22 @@
-from flask import Blueprint, request, jsonify
+import logging
+from datetime import datetime, timedelta
+from flask import Blueprint, jsonify, request
 from .models import db, Reflection, Image
 from .things_integration import ThingsDB
-from datetime import datetime, timedelta
 import os
-import logging
 
-main_bp = Blueprint('main', __name__)
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Create Blueprint
+main_bp = Blueprint('main', __name__, url_prefix='/api')
 
 @main_bp.route('/')
 def test_server():
     return jsonify({'message': 'Server is running!'}), 200
 
-@main_bp.route('/api/reflection', methods=['POST'])
+@main_bp.route('/reflection', methods=['POST'])
 def create_reflection():
     data = request.json
     reflection = Reflection(
@@ -26,7 +31,7 @@ def create_reflection():
     db.session.commit()
     return jsonify({'id': reflection.id}), 201
 
-@main_bp.route('/api/reflection/<date>/<type>', methods=['GET'])
+@main_bp.route('/reflection/<date>/<type>', methods=['GET'])
 def get_reflection(date, type):
     try:
         date_obj = datetime.strptime(date, '%Y-%m-%d')
@@ -51,7 +56,7 @@ def get_reflection(date, type):
     except ValueError:
         return jsonify({'error': 'Invalid date format'}), 400
 
-@main_bp.route('/api/reflection/weekly', methods=['GET'])
+@main_bp.route('/reflection/weekly', methods=['GET'])
 def get_weekly_summary():
     end_date = datetime.utcnow()
     start_date = end_date - timedelta(days=7)
@@ -68,7 +73,7 @@ def get_weekly_summary():
         'reflection': r.reflection
     } for r in reflections]) 
 
-@main_bp.route('/api/tasks/today', methods=['GET'])
+@main_bp.route('/tasks/today', methods=['GET'])
 def get_today_tasks():
     things = ThingsDB()
     try:
@@ -79,7 +84,7 @@ def get_today_tasks():
     except Exception as e:
         return jsonify({'error': f'Error accessing Things 3: {str(e)}'}), 500
 
-@main_bp.route('/api/tasks/upcoming', methods=['GET'])
+@main_bp.route('/tasks/upcoming', methods=['GET'])
 def get_upcoming_tasks():
     days = request.args.get('days', default=7, type=int)
     things = ThingsDB()
@@ -91,7 +96,7 @@ def get_upcoming_tasks():
     except Exception as e:
         return jsonify({'error': f'Error accessing Things 3: {str(e)}'}), 500 
 
-@main_bp.route('/api/tasks/test', methods=['GET'])
+@main_bp.route('/tasks/test', methods=['GET'])
 def test_things_connection():
     things = ThingsDB()
     try:
@@ -104,7 +109,7 @@ def test_things_connection():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500 
 
-@main_bp.route('/api/tasks/yesterday', methods=['GET'])
+@main_bp.route('/tasks/yesterday', methods=['GET'])
 def get_yesterday_tasks():
     things = ThingsDB()
     try:
@@ -113,92 +118,125 @@ def get_yesterday_tasks():
     except Exception as e:
         return jsonify({'error': f'Error accessing Things 3: {str(e)}'}), 500 
 
-@main_bp.route('/api/overview/ceo', methods=['GET'])
+@main_bp.route('/overview/ceo', methods=['GET'])
 def get_ceo_overview():
-    """Get a high-level overview of tasks and events for CEO-level insights"""
+    """Get a high-level overview of tasks, events, and weather for CEO-level insights"""
     try:
+        overview = {
+            'attention_needed': {'count': 0, 'items': []},
+            'high_priority': {'count': 0, 'items': []},
+            'productivity': {'completed_yesterday': 0, 'planned_today': 0},
+            'upcoming_meetings': {'count': 0, 'items': []},
+            'weather': None
+        }
+
+        # Get Weather information
+        try:
+            from .weather_integration import WeatherClient
+            weather = WeatherClient()
+            overview['weather'] = weather.get_weather()
+            logger.info("Weather data retrieved successfully")
+        except Exception as e:
+            logger.error(f"Error getting weather data: {str(e)}")
+
         # Get ClickUp tasks
-        from .clickup_integration import ClickUpClient
-        clickup = ClickUpClient()
-        today = datetime.now()
-        start_date = today - timedelta(days=1)  # Yesterday
-        end_date = today + timedelta(days=7)    # Week ahead
-        clickup_tasks = clickup.get_tasks(start_date, end_date)
+        try:
+            from .clickup_integration import ClickUpClient
+            clickup = ClickUpClient()
+            today = datetime.now()
+            start_date = today - timedelta(days=1)  # Yesterday
+            end_date = today + timedelta(days=7)    # Week ahead
+            clickup_tasks = clickup.get_tasks(start_date, end_date)
+
+            # Process ClickUp tasks for attention needed
+            attention_needed = []
+            high_priority_tasks = []
+            for task in clickup_tasks:
+                # Check for high priority tasks
+                if task.get('priority') in ['urgent', 'high']:
+                    high_priority_tasks.append({
+                        'title': task['name'],
+                        'due_date': task['due_date'],
+                        'status': task['status'],
+                        'url': task['url']
+                    })
+                
+                # Check for tasks needing attention (overdue or blocked)
+                if (task.get('status') == 'blocked' or 
+                    (task.get('due_date') and task['due_date'] < today.isoformat())):
+                    attention_needed.append({
+                        'title': task['name'],
+                        'reason': 'overdue' if task.get('due_date') else 'blocked',
+                        'status': task['status'],
+                        'url': task['url']
+                    })
+
+            overview['attention_needed'] = {
+                'count': len(attention_needed),
+                'items': attention_needed
+            }
+            overview['high_priority'] = {
+                'count': len(high_priority_tasks),
+                'items': high_priority_tasks
+            }
+            logger.info("ClickUp tasks retrieved successfully")
+        except Exception as e:
+            logger.error(f"Error getting ClickUp data: {str(e)}")
 
         # Get Things tasks
-        things = ThingsDB()
-        today_tasks = things.get_today_tasks()
-        yesterday_completed = things.get_yesterday_completed_tasks()
+        try:
+            things = ThingsDB()
+            today_tasks = things.get_today_tasks()
+            yesterday_completed = things.get_yesterday_completed_tasks()
 
-        # Get Calendar events
-        from .calendar_integration import get_calendar_client
-        calendar = get_calendar_client()
-        calendar_events = calendar.get_events(
-            start_time=(today - timedelta(days=1)).isoformat(),
-            end_time=(today + timedelta(days=7)).isoformat()
-        )
-
-        # Process ClickUp tasks for attention needed
-        attention_needed = []
-        high_priority_tasks = []
-        for task in clickup_tasks:
-            # Check for high priority tasks
-            if task.get('priority') in ['urgent', 'high']:
-                high_priority_tasks.append({
-                    'title': task['name'],
-                    'due_date': task['due_date'],
-                    'status': task['status'],
-                    'url': task['url']
-                })
+            # Calculate productivity metrics
+            tasks_completed_yesterday = len(yesterday_completed.get('projects', []))
+            tasks_planned_today = sum(len(area) for area in today_tasks.get('areas', {}).values())
             
-            # Check for tasks needing attention (overdue or blocked)
-            if (task.get('status') == 'blocked' or 
-                (task.get('due_date') and task['due_date'] < today.isoformat())):
-                attention_needed.append({
-                    'title': task['name'],
-                    'reason': 'overdue' if task.get('due_date') else 'blocked',
-                    'status': task['status'],
-                    'url': task['url']
-                })
+            overview['productivity'] = {
+                'completed_yesterday': tasks_completed_yesterday,
+                'planned_today': tasks_planned_today
+            }
+            logger.info("Things data retrieved successfully")
+        except Exception as e:
+            logger.error(f"Error getting Things data: {str(e)}")
 
-        # Organize calendar events
-        upcoming_meetings = []
-        for event in calendar_events:
-            upcoming_meetings.append({
-                'title': event['summary'],
-                'start_time': event['start_time'],
-                'end_time': event['end_time'],
-                'attendees': event.get('attendees', [])
-            })
+        # Get Calendar events if available
+        try:
+            try:
+                from .calendar_integration import get_calendar_client
+                calendar = get_calendar_client()
+                calendar_events = calendar.get_events(
+                    start_time=(today - timedelta(days=1)).isoformat(),
+                    end_time=(today + timedelta(days=7)).isoformat()
+                )
 
-        # Calculate productivity metrics
-        tasks_completed_yesterday = len(yesterday_completed.get('projects', []))
-        tasks_planned_today = sum(len(area) for area in today_tasks.get('areas', {}).values())
-        
-        return jsonify({
-            'status': 'success',
-            'overview': {
-                'attention_needed': {
-                    'count': len(attention_needed),
-                    'items': attention_needed
-                },
-                'high_priority': {
-                    'count': len(high_priority_tasks),
-                    'items': high_priority_tasks
-                },
-                'productivity': {
-                    'completed_yesterday': tasks_completed_yesterday,
-                    'planned_today': tasks_planned_today
-                },
-                'upcoming_meetings': {
+                upcoming_meetings = []
+                for event in calendar_events:
+                    upcoming_meetings.append({
+                        'title': event['summary'],
+                        'start_time': event['start_time'],
+                        'end_time': event['end_time'],
+                        'attendees': event.get('attendees', [])
+                    })
+
+                overview['upcoming_meetings'] = {
                     'count': len(upcoming_meetings),
                     'items': upcoming_meetings
                 }
-            }
+                logger.info("Calendar events retrieved successfully")
+            except ImportError:
+                logger.warning("Calendar integration not available")
+        except Exception as e:
+            logger.error(f"Error getting calendar data: {str(e)}")
+        
+        return jsonify({
+            'status': 'success',
+            'overview': overview
         })
 
     except Exception as e:
-        logging.error(f"Error generating CEO overview: {str(e)}")
+        logger.error(f"Error generating CEO overview: {str(e)}")
         return jsonify({
             'status': 'error',
             'message': str(e)
